@@ -1,7 +1,7 @@
 @echo off
-echo ===== P2P Competitive TF2 Minimal Build Script =====
+echo ===== Build Script =====
 echo.
-echo This script builds the P2P Competitive TF2 mod and sets up a complete game folder
+echo This script builds and sets up a complete game folder
 echo with all necessary configuration files.
 echo.
 
