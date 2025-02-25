@@ -1,0 +1,2 @@
+C:\Users\User\Downloads\as\data\source-sdk-2013\src\utils\qc_eyes\Release\x64\qc_eyes.exe
+C:\Users\User\Downloads\as\data\source-sdk-2013-2pld\src\utils\qc_eyes\Release\x64\qc_eyes.exe
