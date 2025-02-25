@@ -16,19 +16,17 @@ Clone the repository using the following command:
 
 Requirements:
  - Source SDK 2013 Multiplayer installed via Steam
- - Visual Studio 2022
+ - Visual Studio 2022 (Community, Professional, or Enterprise edition)
 
-Inside the cloned directory, navigate to `src`, run:
+From the root of the cloned directory, run:
 ```bat
-createallprojects.bat
+build.cmd
 ```
-This will generate the Visual Studio project `everything.sln` which will be used to build your mod.
 
-Then, on the menu bar, go to `Build > Build Solution`, and wait for everything to build.
+After the build completes:
 
-You can then select the `Client (Mod Name)` project you wish to run, right click and select `Set as Startup Project` and hit the big green `> Local Windows Debugger` button on the tool bar in order to launch your mod.
-
-The default launch options should be already filled in for the `Release` configuration.
+1. Copy all contents from the `game` folder to `C:\Program Files (x86)\Steam\steamapps\common\Source SDK Base 2013 Multiplayer`
+2. Launch the mod using the `mod_tf.cmd` file in that directory
 
 ### Linux
 
