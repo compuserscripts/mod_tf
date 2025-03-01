@@ -24,13 +24,17 @@ fi
 solution_out="_vpc_/ninja/sdk_everything_$VPC_NINJA_BUILD_MODE"
 
 if [[ ! -e "$solution_out.ninja" ]]; then
-    devtools/bin/vpc /hl2mp /tf /linux64 /ninja /define:SOURCESDK +everything /mksln "$solution_out"
+    # Removed /hl2mp flag, keep only /tf
+    devtools/bin/vpc /tf /linux64 /ninja /define:SOURCESDK +everything /mksln "$solution_out"
 
     # Generate compile commands.
     ninja -f "$solution_out.ninja" -t compdb > compile_commands.json
     # Remove some unsupported clang commands.
     sed -i 's/-fpredictive-commoning//g; s/-fvar-tracking-assignments//g' compile_commands.json
     sed -i 's|/my_mod/src|.|g' compile_commands.json
+    
+    # Fix VPC command by removing /hl2mp if it still exists in the .ninja file
+    sed -i 's| /hl2mp /tf| /tf|g' "$solution_out.ninja"
 fi
 
 ninja -f "$solution_out.ninja" -j$(nproc)

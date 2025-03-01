@@ -6,10 +6,14 @@ function run_in_sniper() {
     script_file=$(basename -- "$script")
     check_env=$(sha256sum -- "$script" | cut -d " " -f 1)
 
-    if [[ ! -f /run/.containerenv ]]; then
-        # Check if podman exists
-        if ! command -v podman &> /dev/null; then
-            echo "Error: podman is not installed. Exiting..."
+    # Check if we're already in a container
+    if [[ ! -f /run/.containerenv && ! -f /.dockerenv ]]; then
+        # Standard host execution path
+        # Use whatever container system is available
+        # We'll try to use podman first, then docker as fallback
+        container_cmd=$(command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo "")
+        if [[ -z "$container_cmd" ]]; then
+            echo "Error: Neither podman nor docker is installed. Exiting..."
             exit 1
         fi
 
@@ -28,40 +32,115 @@ function run_in_sniper() {
         STEAM_RT_TARBALL="$DOCKER_DATA_ROOT/steamrt_sniper_sdk.tar.gz"
         mkdir -p "$DOCKER_DATA_ROOT"
 
+        # Using the previously detected container command
+        cmd_name=$(basename "$container_cmd")
+        
         # Check if image already exists
-        if ! podman images "$image" | grep -q "steamos"; then
+        if ! $container_cmd images "$image" | grep -q "steamos"; then
             # Check if we have a cached tarball
             if [ -f "$STEAM_RT_TARBALL" ]; then
                 echo "Found cached Steam Runtime Sniper tarball. Loading image from file..."
-                podman load < "$STEAM_RT_TARBALL"
+                $container_cmd load < "$STEAM_RT_TARBALL"
             else
                 # Pull the image and save it for future use
                 echo "Pulling Steam Runtime Sniper image..."
-                podman pull "$image"
+                $container_cmd pull "$image"
                 
                 # Save the image as tar.gz for future use
                 echo "Saving Steam Runtime Sniper image as tarball for future use..."
-                podman save "$image" | gzip > "$STEAM_RT_TARBALL"
+                $container_cmd save "$image" | gzip > "$STEAM_RT_TARBALL"
             fi
         else
             echo "Steam Runtime Sniper image already exists locally"
         fi
 
-        echo "Running script inside $image"
-        exec podman run \
+        echo "Running script inside $image using $cmd_name"
+        user_args=""
+        
+        # Use environment variable if set, otherwise detect appropriate user namespace flags
+        if [[ -n "${CONTAINER_USERNS:-}" ]]; then
+            # Use our environment variable set in build_new.sh
+            # For podman, make sure the format is correct (podman doesn't use -u flag)
+            if [[ "$container_cmd" == *"podman"* ]] && [[ "$CONTAINER_USERNS" == "--userns"* ]]; then
+                user_args="$CONTAINER_USERNS"
+            elif [[ "$container_cmd" == *"podman"* ]]; then
+                user_args="--userns=keep-id"
+            else
+                # For docker, use the -u flag format
+                user_args="$CONTAINER_USERNS"
+            fi
+        elif [[ "$container_cmd" == *"podman"* ]]; then
+            # Podman-specific user namespace option
+            user_args="--userns=keep-id"
+        else
+            # Docker-specific user mapping
+            user_args="-u $(id -u):$(id -g)"
+        fi
+        
+        exec $container_cmd run \
             --env "$check_env=$script_file" \
             --env "CCACHE_DIR=${CCACHE_DIR:-$HOME/.ccache}" \
-            --userns=keep-id \
+            $user_args \
             --rm -it \
             --mount type=bind,\"source="${CCACHE_DIR:-$HOME/.ccache}"\",\"target="${CCACHE_DIR:-$HOME/.ccache}"\" \
             --mount type=bind,\"source="$mod_base_dir"\",target=/my_mod/ \
             "$image" \
             /my_mod/"$mod_src_dir_name"/"$script_file" \
             "$@"
+    elif [[ -S /var/run/docker.sock ]]; then
+        # Nested container with Docker socket path
+        echo "Detected container with Docker socket. Using Docker-in-Docker approach..."
+        
+        # Ensure Docker client is available
+        if ! command -v docker &> /dev/null; then
+            echo "Docker client not found. Installing Docker CLI..."
+            apt-get update -qq
+            apt-get install -y -qq docker.io || apt-get install -y -qq docker-ce-cli || {
+                echo "Failed to install Docker client. Please install it manually."
+                exit 1
+            }
+        fi
+        
+        # Test Docker connection
+        if ! docker info &>/dev/null; then
+            echo "Cannot connect to Docker daemon via socket. Check that the socket is properly mounted."
+            exit 1
+        fi
+        
+        # We're in a container with Docker socket, continue with Docker-in-Docker
+        mod_src_dir=$(pwd)
+        mod_src_dir_name=$(basename -- "$mod_src_dir")
+        mod_base_dir=$(dirname -- "$mod_src_dir")
+        
+        # Define the image
+        image="registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest"
+        
+        # Pull the image directly (no need to save it as tarball in this case)
+        echo "Pulling Steam Runtime Sniper image..."
+        docker pull "$image"
+        
+        echo "Running script inside $image using Docker-in-Docker"
+        
+        # In Docker-in-Docker setups, don't worry about user namespace
+        # The parent container handles that
+        exec docker run \
+            --env "$check_env=$script_file" \
+            --env "CCACHE_DIR=/tmp/ccache" \
+            --rm -i \
+            -v "/tmp/ccache:/tmp/ccache" \
+            -v "$mod_base_dir:/my_mod/" \
+            "$image" \
+            /my_mod/"$mod_src_dir_name"/"$script_file" \
+            "$@"
     fi
 
     if [[ $(printenv -- "$check_env") != "$script_file" ]]; then
-        echo "Can't run in a nested container setup. Sorry! :("
-        exit 1
+        # Check if we're in a container with the Docker socket mounted
+        if [[ -S /var/run/docker.sock ]]; then
+            echo "Detected nested container with Docker socket mounted. Continuing..."
+        else
+            echo "Can't run in a nested container without Docker socket. Mount with -v /var/run/docker.sock:/var/run/docker.sock"
+            exit 1
+        fi
     fi
 }
