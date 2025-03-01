@@ -22,7 +22,31 @@ function run_in_sniper() {
         mod_src_dir_name=$(basename -- "$mod_src_dir")
         mod_base_dir=$(dirname -- "$mod_src_dir")
 
+        # Define the image and cache paths
         image="registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest"
+        DOCKER_DATA_ROOT="$HOME/.docker"
+        STEAM_RT_TARBALL="$DOCKER_DATA_ROOT/steamrt_sniper_sdk.tar.gz"
+        mkdir -p "$DOCKER_DATA_ROOT"
+
+        # Check if image already exists
+        if ! podman images "$image" | grep -q "steamos"; then
+            # Check if we have a cached tarball
+            if [ -f "$STEAM_RT_TARBALL" ]; then
+                echo "Found cached Steam Runtime Sniper tarball. Loading image from file..."
+                podman load < "$STEAM_RT_TARBALL"
+            else
+                # Pull the image and save it for future use
+                echo "Pulling Steam Runtime Sniper image..."
+                podman pull "$image"
+                
+                # Save the image as tar.gz for future use
+                echo "Saving Steam Runtime Sniper image as tarball for future use..."
+                podman save "$image" | gzip > "$STEAM_RT_TARBALL"
+            fi
+        else
+            echo "Steam Runtime Sniper image already exists locally"
+        fi
+
         echo "Running script inside $image"
         exec podman run \
             --env "$check_env=$script_file" \
